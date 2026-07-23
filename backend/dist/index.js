@@ -68,7 +68,7 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
             res.status(404).json({ error: "Incident not found" });
             return;
         }
-        if (incident.status !== 'PENDING_APPROVAL') {
+        if (incident.status !== 'PENDING_APPROVAL' && incident.status !== 'FAILED' && incident.status !== 'DETECTED') {
             res.status(400).json({ error: `Cannot approve rollback for incident in status: ${incident.status}` });
             return;
         }
@@ -112,6 +112,69 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
     catch (error) {
         console.error(`[Approval API] Error during rollback approval:`, error);
         res.status(500).json({ error: `Rollback execution failed: ${error.message}` });
+    }
+});
+// 4. Dismiss incident (Cancel alert)
+app.post('/api/incidents/:id/dismiss', async (req, res) => {
+    const { id } = req.params;
+    console.log(`[Dismiss API] Received request to dismiss incident ${id}`);
+    try {
+        const incident = await prisma.incident.findUnique({
+            where: { id }
+        });
+        if (!incident) {
+            res.status(404).json({ error: "Incident not found" });
+            return;
+        }
+        const updatedIncident = await prisma.incident.update({
+            where: { id },
+            data: {
+                status: 'FAILED',
+                rootCause: incident.rootCause
+                    ? `${incident.rootCause}\n\n[Dismissed by Operator]: Incident was manually cancelled.`
+                    : '[Dismissed by Operator]: Incident was manually cancelled.'
+            }
+        });
+        res.status(200).json({
+            message: "Incident alert successfully dismissed.",
+            incident: updatedIncident
+        });
+    }
+    catch (error) {
+        console.error(`[Dismiss API] Error dismissing incident:`, error);
+        res.status(500).json({ error: `Failed to dismiss incident: ${error.message}` });
+    }
+});
+// 5. Clear all resolved incidents
+app.delete('/api/incidents/resolved', async (req, res) => {
+    console.log(`[Clear API] Received request to delete all resolved alerts`);
+    try {
+        const deleted = await prisma.incident.deleteMany({
+            where: { status: 'RESOLVED' }
+        });
+        res.status(200).json({
+            message: `Cleared ${deleted.count} resolved alerts.`,
+            count: deleted.count
+        });
+    }
+    catch (error) {
+        console.error(`[Clear API] Error clearing resolved alerts:`, error);
+        res.status(500).json({ error: `Failed to clear resolved alerts: ${error.message}` });
+    }
+});
+// 6. Delete a specific incident
+app.delete('/api/incidents/:id', async (req, res) => {
+    const { id } = req.params;
+    console.log(`[Delete API] Received request to delete incident ${id}`);
+    try {
+        await prisma.incident.delete({
+            where: { id }
+        });
+        res.status(200).json({ message: "Incident successfully deleted." });
+    }
+    catch (error) {
+        console.error(`[Delete API] Error deleting incident:`, error);
+        res.status(500).json({ error: `Failed to delete incident: ${error.message}` });
     }
 });
 app.listen(3000, () => console.log('PagerMind Gateway running on port 3000'));

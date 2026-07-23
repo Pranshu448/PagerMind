@@ -49,14 +49,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
         }
         else if (name === "get_git_diff") {
-            // Run the git diff explicitly inside the sandbox folder
-            const diffOutput = execSync("git diff HEAD~1 HEAD", {
-                cwd: sandboxPath,
-                encoding: "utf-8",
-            });
-            return {
-                content: [{ type: "text", text: diffOutput || "No changes found." }],
-            };
+            try {
+                // Run the git diff explicitly inside the sandbox folder
+                const diffOutput = execSync("git diff HEAD~1 HEAD", {
+                    cwd: sandboxPath,
+                    encoding: "utf-8",
+                });
+                return {
+                    content: [{ type: "text", text: diffOutput || "No committed changes found in the latest deployment." }],
+                };
+            }
+            catch (error) {
+                // Fallback: If no parent commit exists (single commit repo), show unstaged diff
+                const unstagedDiff = execSync("git diff", {
+                    cwd: sandboxPath,
+                    encoding: "utf-8",
+                });
+                return {
+                    content: [{ type: "text", text: `Notice: Only one commit exists in the repository history.\nUncommitted changes on disk:\n${unstagedDiff || "None (working tree clean)"}` }],
+                };
+            }
         }
         else if (name === "execute_rollback") {
             const serverJsPath = path.join(sandboxPath, "server.js");
@@ -67,14 +79,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     content: [{ type: "text", text: "SUCCESS: Service is already restored and running on the stable database port 5432." }],
                 };
             }
-            // Run Git reset to revert sandbox changes to the previous stable commit
-            const output = execSync("git reset --hard HEAD~1", {
-                cwd: sandboxPath,
-                encoding: "utf-8",
-            });
-            return {
-                content: [{ type: "text", text: `SUCCESS: Service rolled back to previous stable commit. Git output: ${output.trim()}` }],
-            };
+            try {
+                // Try resetting to the previous commit (in case the broken config was committed)
+                const output = execSync("git reset --hard HEAD~1", {
+                    cwd: sandboxPath,
+                    encoding: "utf-8",
+                });
+                return {
+                    content: [{ type: "text", text: `SUCCESS: Service rolled back to previous stable commit. Git output: ${output.trim()}` }],
+                };
+            }
+            catch (error) {
+                // Fallback: If no parent commit exists (single commit repo), reset to current HEAD to discard unstaged changes
+                const output = execSync("git reset --hard HEAD", {
+                    cwd: sandboxPath,
+                    encoding: "utf-8",
+                });
+                return {
+                    content: [{ type: "text", text: `SUCCESS: Discarded unstaged configuration changes. Git output: ${output.trim()}` }],
+                };
+            }
         }
         else {
             throw new Error(`Tool not found: ${name}`);

@@ -74,10 +74,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } 
     
     else if (name === "execute_rollback") {
-      // Simulate a rollback taking 2 seconds
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const serverJsPath = path.join(sandboxPath, "server.js");
+      const serverJsContent = fs.readFileSync(serverJsPath, "utf-8");
+      
+      // Prevent double rollbacks if already resolved
+      if (serverJsContent.includes("const DB_PORT = 5432;")) {
+        return {
+          content: [{ type: "text", text: "SUCCESS: Service is already restored and running on the stable database port 5432." }],
+        };
+      }
+
+      // Run Git reset to revert sandbox changes to the previous stable commit
+      const output = execSync("git reset --hard HEAD~1", {
+        cwd: sandboxPath,
+        encoding: "utf-8",
+      });
       return {
-        content: [{ type: "text", text: "SUCCESS: Service rolled back to previous stable commit. Health checks passing." }],
+        content: [{ type: "text", text: `SUCCESS: Service rolled back to previous stable commit. Git output: ${output.trim()}` }],
       };
     } 
     

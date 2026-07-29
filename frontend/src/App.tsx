@@ -5,6 +5,8 @@ interface Incident {
   serviceName: string;
   status: 'DETECTED' | 'INVESTIGATING' | 'PENDING_APPROVAL' | 'RESOLVED' | 'FAILED';
   rootCause: string | null;
+  confidence?: number;
+  recovery?: string;
   createdAt: string;
 }
 
@@ -24,6 +26,7 @@ function App() {
   // Sliding Side-by-Side Console States
   const [showBackendConsole, setShowBackendConsole] = useState(false);
   const [backendLogs, setBackendLogs] = useState<Array<{ text: string; type?: 'error' | 'success' | 'info' }>>([]);
+  const [activeIncidentId, setActiveIncidentId] = useState<string | null>(null);
 
   // Mechanical Key Interaction States
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -104,31 +107,54 @@ function App() {
     }
   }, [isBooted, fetchIncidents]);
 
+  // Track active unresolved incident automatically
+  useEffect(() => {
+    const active = incidents.find(inc => inc.status !== 'RESOLVED' && inc.status !== 'FAILED');
+    if (active) {
+      setActiveIncidentId(active.id);
+      setShowBackendConsole(true);
+    }
+  }, [incidents]);
+
+  // SSE Logger Connection
+  useEffect(() => {
+    if (activeIncidentId) {
+      setBackendLogs([]);
+      const eventSource = new EventSource(`http://localhost:3000/api/incidents/${activeIncidentId}/logs/stream`);
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const logItem = JSON.parse(event.data);
+          setBackendLogs(prev => {
+            // Avoid duplicate log lines in UI
+            const isDuplicate = prev.some(item => item.text === logItem.text);
+            if (isDuplicate) return prev;
+            return [...prev, { text: logItem.text, type: logItem.type }];
+          });
+        } catch (err) {
+          console.error("SSE parse error:", err);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.error("SSE connection error:", err);
+        eventSource.close();
+      };
+
+      return () => {
+        eventSource.close();
+      };
+    }
+  }, [activeIncidentId]);
+
   // Auto-scrolling hooks removed for manual scrolling
 
-  // Helper to add logs to the backend terminal
-  const addBackendLog = (text: string, delay: number, type?: 'error' | 'success' | 'info') => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        setBackendLogs(prev => [...prev, { text, type }]);
-        resolve();
-      }, delay);
-    });
-  };
 
   // Action: Approve Rollback
   const handleApprove = async (id: string) => {
     setApprovingId(id);
     setError(null);
-    setBackendLogs([]);
-    setShowBackendConsole(true); // Pop open the second terminal on the right side smoothly!
-
-    await addBackendLog(`[Agent] Incident locked in PENDING_APPROVAL. Awaiting human input.`, 100);
-    await addBackendLog(`[Agent] MCP server connection closed.`, 300);
-    await addBackendLog(`[Approval API] Received rollback approval request for incident ${id}`, 300);
-    await addBackendLog(`[Approval API] Connecting to local MCP server to execute rollback...`, 400);
-    await addBackendLog(`PagerMind MCP Server running on stdio`, 300, 'info');
-    await addBackendLog(`[Approval API] Connected to MCP server. Running execute_rollback...`, 400);
+    setShowBackendConsole(true);
 
     try {
       const res = await fetch(`http://localhost:3000/api/incidents/${id}/approve`, {
@@ -137,25 +163,10 @@ function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Rollback failed');
 
-      const hasFatalWarning = data.incident.rootCause?.includes("fatal:") || data.incident.rootCause?.includes("ambiguous argument");
-
-      if (hasFatalWarning) {
-        await addBackendLog(`fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree.`, 400, 'error');
-        await addBackendLog(`Use '--' to separate paths from revisions, like this:`, 100);
-        await addBackendLog(`'git <command> [<revision>...] -- [<file>...]'`, 100);
-      }
-
-      await addBackendLog(`[Approval API] MCP connection closed.`, 400);
-      
-      const successMsg = `[Approval API] Rollback successful: ${data.message || 'SUCCESS: Discarded unstaged configuration changes.'}`;
-      await addBackendLog(successMsg, 500, 'success');
-
       // Update local state immediately
       setIncidents(prev => prev.map(inc => inc.id === id ? data.incident : inc));
     } catch (err: any) {
       console.error(err);
-      await addBackendLog(`[Approval API] MCP connection closed.`, 200);
-      await addBackendLog(`[Approval API] Error during rollback: ${err.message}`, 400, 'error');
       setError(err.message || 'Error executing rollback');
     } finally {
       setApprovingId(null);
@@ -390,8 +401,14 @@ function App() {
                     {incidents.map((incident) => (
                       <div 
                         key={incident.id} 
-                        className={`p-5 rounded-xl border bg-black/40 backdrop-blur-sm transition-all duration-300 shadow-[0_4px_24px_-10px_rgba(0,0,0,0.5)] ${
-                          incident.status === 'PENDING_APPROVAL' 
+                        onClick={() => {
+                          setActiveIncidentId(incident.id);
+                          setShowBackendConsole(true);
+                        }}
+                        className={`p-5 rounded-xl border bg-black/40 backdrop-blur-sm transition-all duration-300 shadow-[0_4px_24px_-10px_rgba(0,0,0,0.5)] cursor-pointer hover:border-purple-500/30 ${
+                          activeIncidentId === incident.id
+                            ? 'ring-1 ring-purple-500/40 border-purple-500/40 bg-purple-500/[0.02]'
+                            : incident.status === 'PENDING_APPROVAL' 
                             ? 'border-amber-500/25 bg-amber-500/[0.01]' 
                             : incident.status === 'RESOLVED' 
                             ? 'border-emerald-500/20 bg-emerald-500/[0.01]' 
@@ -428,6 +445,25 @@ function App() {
                             )}
                           </div>
                         </div>
+
+                        {/* Recovery and Confidence Metrics */}
+                        {incident.recovery && (
+                          <div className="mt-3 flex gap-2 items-center text-[10px] font-mono">
+                            <span className="text-zinc-500 font-bold">RECOVERY ACTION:</span>
+                            <span className="bg-purple-500/10 border border-purple-500/30 text-purple-400 font-bold px-2 py-0.5 rounded uppercase">
+                              {incident.recovery.replace('_', ' ')}
+                            </span>
+                            {incident.confidence !== undefined && incident.confidence > 0 && (
+                              <>
+                                <span className="text-zinc-700">|</span>
+                                <span className="text-zinc-500 font-bold">CONFIDENCE:</span>
+                                <span className={`font-bold ${incident.confidence >= 0.8 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                  {Math.round(incident.confidence * 100)}%
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
 
                         {/* Card Diagnosis Body */}
                         {incident.rootCause && (
@@ -613,7 +649,7 @@ function App() {
                 }
                 if (log.type === 'info') {
                   return (
-                    <div key={idx} className="text-purple-400 font-semibold select-text">
+                    <div key={idx} className="text-white font-semibold select-text">
                       {log.text}
                     </div>
                   );

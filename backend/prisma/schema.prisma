@@ -12,5 +12,7 @@ model Incident {
   serviceName    String
   status         String   @default("DETECTED") // DETECTED -> INVESTIGATING -> PENDING_APPROVAL -> RESOLVED
   rootCause      String?
+  confidence     Float?
+  recovery       String?
   createdAt      DateTime @default(now())
 }

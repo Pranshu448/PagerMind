@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { spawnAgentLoop } from './orchestrator.js';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { agentLog, logEmitter, getIncidentLogs, clearIncidentLogs } from './logger.js';
 
 const app = express();
 app.use(cors());
@@ -55,6 +56,9 @@ app.post('/api/alerts', async (req, res) => {
     // Hand off to the Orchestrator
     res.status(202).json({ message: "Agent spawned.", incidentId: incident.id });
     
+    // Clear any previous logs for this incident
+    clearIncidentLogs(incident.id);
+
     // Fire-and-forget: spawn the agent loop in the background
     spawnAgentLoop(incident.id, serviceName).catch(console.error);
   } catch (error: any) {
@@ -67,7 +71,7 @@ app.post('/api/alerts', async (req, res) => {
 app.post('/api/incidents/:id/approve', async (req, res) => {
   const { id } = req.params;
 
-  console.log(`[Approval API] Received rollback approval request for incident ${id}`);
+  agentLog(id, `[Approval API] Received rollback approval request for incident ${id}`);
 
   try {
     // Find the incident
@@ -86,7 +90,7 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
     }
 
     // Connect to the MCP Server to run the rollback tool
-    console.log(`[Approval API] Connecting to local MCP server to execute rollback...`);
+    agentLog(id, `[Approval API] Connecting to local MCP server to execute rollback...`);
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "../mcp-server/src/server.ts"]
@@ -94,24 +98,48 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
 
     const mcpClient = new Client({ name: "pagermind-approval", version: "1.0.0" }, { capabilities: {} });
     await mcpClient.connect(transport);
-    console.log(`[Approval API] Connected to MCP server. Running execute_rollback...`);
+    agentLog(id, `[Approval API] Connected to MCP server. Resolving recommended recovery action...`);
+
+    let recoveryTool = "rollback_deployment";
+    let recoveryArgs: any = { deployment_name: "api" };
+
+    if (incident.recovery === "restart_pod") {
+      recoveryTool = "restart_pod";
+      recoveryArgs = { pod_name: "api" };
+    } else if (incident.recovery === "scale_deployment") {
+      recoveryTool = "scale_deployment";
+      recoveryArgs = { deployment_name: "api", replicas: 5 };
+    }
+
+    agentLog(id, `[Approval API] Executing recovery action '${recoveryTool}' with args: ${JSON.stringify(recoveryArgs)}`);
 
     let rollbackMessage = "";
     try {
       const rollbackResult = (await mcpClient.callTool({
-        name: "execute_rollback",
-        arguments: {}
+        name: recoveryTool,
+        arguments: recoveryArgs
       })) as any;
 
       rollbackMessage = rollbackResult.content && rollbackResult.content[0] && rollbackResult.content[0].type === "text"
         ? rollbackResult.content[0].text
-        : "Rollback finished with no output.";
+        : "Recovery finished with no output.";
+
+      // Clear SRE incident memory upon successful rollback
+      try {
+        await mcpClient.callTool({
+          name: "clear_memory",
+          arguments: {}
+        });
+        agentLog(id, `[Approval API] SRE Incident memory cleared successfully.`, 'success');
+      } catch (memError: any) {
+        agentLog(id, `[Approval API] Warning: Failed to clear SRE memory: ${memError.message || memError}`, 'error');
+      }
     } finally {
       await mcpClient.close();
-      console.log(`[Approval API] MCP connection closed.`);
+      agentLog(id, `[Approval API] MCP connection closed.`);
     }
 
-    console.log(`[Approval API] Rollback successful: ${rollbackMessage}`);
+    agentLog(id, `[Approval API] Rollback successful: ${rollbackMessage}`, 'success');
 
     // Update state to RESOLVED
     const updatedIncident = await prisma.incident.update({
@@ -128,7 +156,7 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error(`[Approval API] Error during rollback approval:`, error);
+    agentLog(id, `[Approval API] Error during rollback approval: ${error.message || error}`, 'error');
     res.status(500).json({ error: `Rollback execution failed: ${error.message}` });
   }
 });
@@ -137,7 +165,7 @@ app.post('/api/incidents/:id/approve', async (req, res) => {
 app.post('/api/incidents/:id/dismiss', async (req, res) => {
   const { id } = req.params;
 
-  console.log(`[Dismiss API] Received request to dismiss incident ${id}`);
+  agentLog(id, `[Dismiss API] Received request to dismiss incident ${id}`);
 
   try {
     const incident = await prisma.incident.findUnique({
@@ -164,15 +192,52 @@ app.post('/api/incidents/:id/dismiss', async (req, res) => {
       incident: updatedIncident
     });
   } catch (error: any) {
-    console.error(`[Dismiss API] Error dismissing incident:`, error);
+    agentLog(id, `[Dismiss API] Error dismissing incident: ${error.message || error}`, 'error');
     res.status(500).json({ error: `Failed to dismiss incident: ${error.message}` });
   }
 });
 
-// 5. Clear all resolved incidents
+// 5. Server-Sent Events (SSE) stream for real-time SRE logs
+app.get('/api/incidents/:id/logs/stream', (req, res) => {
+  const { id } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Send any existing cached logs immediately so the client catches up on refresh
+  const history = getIncidentLogs(id);
+  for (const logItem of history) {
+    res.write(`data: ${JSON.stringify(logItem)}\n\n`);
+  }
+
+  const onLog = (data: any) => {
+    if (data.incidentId === id) {
+      res.write(`data: ${JSON.stringify({ text: data.text, type: data.type })}\n\n`);
+    }
+  };
+
+  logEmitter.on('log', onLog);
+
+  req.on('close', () => {
+    logEmitter.off('log', onLog);
+    res.end();
+  });
+});
+
+// 6. Clear all resolved incidents
 app.delete('/api/incidents/resolved', async (req, res) => {
   console.log(`[Clear API] Received request to delete all resolved alerts`);
   try {
+    // Find all resolved incidents to clear their logs
+    const resolved = await prisma.incident.findMany({
+      where: { status: 'RESOLVED' }
+    });
+    for (const inc of resolved) {
+      clearIncidentLogs(inc.id);
+    }
+
     const deleted = await prisma.incident.deleteMany({
       where: { status: 'RESOLVED' }
     });
@@ -186,11 +251,12 @@ app.delete('/api/incidents/resolved', async (req, res) => {
   }
 });
 
-// 6. Delete a specific incident
+// 7. Delete a specific incident
 app.delete('/api/incidents/:id', async (req, res) => {
   const { id } = req.params;
   console.log(`[Delete API] Received request to delete incident ${id}`);
   try {
+    clearIncidentLogs(id);
     await prisma.incident.delete({
       where: { id }
     });

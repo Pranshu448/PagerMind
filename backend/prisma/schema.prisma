@@ -7,20 +7,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model Incident {
-  id             String   @id @default(uuid())
-  serviceName    String
-  status         String   @default("DETECTED") // DETECTED -> INVESTIGATING -> PENDING_APPROVAL -> RESOLVED
-  rootCause      String?
-  confidence     Float?
-  recovery       String?
-  createdAt      DateTime @default(now())
-}
-
 model LiveService {
   id               String   @id @default(uuid())
   name             String
   provider         String
+  providerServiceKey String @unique @default("")
   configJson       String
   encryptedSecrets String
   monitorState     String   @default("HEALTHY")

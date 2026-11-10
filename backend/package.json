@@ -7,7 +7,6 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "monitor": "tsx src/monitor.ts",
     "test": "tsx --test tests/live/*.test.ts"
   },
   "keywords": [],
@@ -25,15 +24,13 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "prisma": "^5.22.0",
-    "socket.io": "^4.8.3"
-    ,"zod": "^4.4.3"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/socket.io": "^3.0.1",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2"

@@ -24,9 +24,10 @@ export function createLiveRouter(prisma, diagnose, startMonitoring, stopMonitori
             return res.status(409).json({ error: 'This provider service is already being saved. Please wait for the first request to finish.' });
         savesInProgress.add(identity);
         try {
-            const matches = (await prisma.liveService.findMany()).filter(s => { const p = serviceConfigSchema.safeParse(JSON.parse(s.configJson)); return p.success && p.data.provider === config.provider && p.data.providerServiceId.trim() === config.providerServiceId; });
+            const matches = (await prisma.liveService.findMany()).filter(s => s.providerServiceKey === identity || (() => { const p = serviceConfigSchema.safeParse(JSON.parse(s.configJson)); return p.success && p.data.provider === config.provider && p.data.providerServiceId.trim() === config.providerServiceId; })());
             const [old, ...duplicates] = matches;
-            const service = old ? await prisma.liveService.update({ where: { id: old.id }, data: { name: config.name, configJson: JSON.stringify(config), encryptedSecrets: encryptSecret(secrets) } }) : await prisma.liveService.create({ data: { name: config.name, provider: config.provider, configJson: JSON.stringify(config), encryptedSecrets: encryptSecret(secrets) } });
+            const data = { name: config.name, provider: config.provider, providerServiceKey: identity, configJson: JSON.stringify(config), encryptedSecrets: encryptSecret(secrets) };
+            const service = old ? await prisma.liveService.update({ where: { id: old.id }, data }) : await prisma.liveService.create({ data });
             for (const duplicate of duplicates)
                 stopMonitoring(duplicate.id);
             if (duplicates.length)

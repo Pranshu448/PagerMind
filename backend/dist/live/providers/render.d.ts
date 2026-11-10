@@ -1,0 +1,2 @@
+export declare function withRenderReadOnly<T>(token: string, fn: (call: (name: string, args: Record<string, unknown>) => Promise<string>, available: string[]) => Promise<T>): Promise<T>;
+//# sourceMappingURL=render.d.ts.map

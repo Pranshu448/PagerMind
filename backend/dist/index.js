@@ -7,9 +7,30 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { agentLog, logEmitter, getIncidentLogs, clearIncidentLogs } from './logger.js';
 const app = express();
-app.use(cors());
+// Sandbox routes retain their existing permissive development CORS behavior.
+// Live Mode installs its own origin-restricted CORS and token middleware.
+app.use((req, res, next) => req.path.startsWith('/api/live') ? next() : cors()(req, res, next));
 app.use(express.json());
 const prisma = new PrismaClient();
+// Keep Sandbox Mode independent of Live Mode's native SQLite checkpointer.
+// Live Mode is deliberately unavailable until all security settings are supplied.
+if (process.env.FRONTEND_ORIGIN && process.env.LIVE_API_TOKEN && process.env.LIVE_SECRET_KEY) {
+    void (async () => {
+        const [{ createDiagnoser, createLiveRouter }, { LiveScheduler }] = await Promise.all([
+            import('./live/router.js'),
+            import('./live/scheduler.js'),
+        ]);
+        const diagnoseLive = createDiagnoser(prisma);
+        const liveScheduler = new LiveScheduler(prisma, diagnoseLive);
+        await liveScheduler.reconcile();
+        await liveScheduler.startAll();
+        app.use('/api/live', createLiveRouter(prisma, diagnoseLive, (serviceId) => liveScheduler.start(serviceId), (serviceId) => liveScheduler.stop(serviceId)));
+        console.log('PagerMind Live Mode enabled at /api/live');
+    })().catch(error => console.error('Live Mode failed to start:', error));
+}
+else {
+    console.log('PagerMind Live Mode disabled: configure FRONTEND_ORIGIN, LIVE_API_TOKEN, and LIVE_SECRET_KEY to enable it.');
+}
 // 1. Get all incidents (sorted by creation time descending)
 app.get('/api/incidents', async (req, res) => {
     try {

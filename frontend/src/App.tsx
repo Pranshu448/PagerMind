@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { LiveMode } from './LiveMode';
 
 interface Incident {
   id: string;
@@ -11,6 +12,7 @@ interface Incident {
 }
 
 function App() {
+  const [mode, setMode] = useState<'sandbox' | 'live'>('sandbox');
   // Incident Data State
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(false);
@@ -277,9 +279,12 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isBooted, incidents]);
 
+  if (mode === 'live') return <LiveMode onSandbox={() => setMode('sandbox')} />;
+
   return (
     <div className="relative h-screen max-h-screen bg-black text-zinc-300 flex flex-col font-mono select-none overflow-hidden">
       
+      <button className="absolute z-50 right-5 top-4 border border-cyan-700 bg-cyan-950 px-3 py-1.5 text-xs rounded" onClick={() => setMode('live')}>Live Mode</button>
       {/* Hyper-Modern Glow Backdrop Aura */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] md:w-[850px] h-[600px] md:h-[850px] bg-gradient-to-tr from-indigo-500/5 to-cyan-500/5 blur-[130px] rounded-full pointer-events-none" />
       <div className="absolute top-1/3 left-1/3 w-[300px] h-[300px] bg-purple-500/[0.04] blur-[110px] rounded-full pointer-events-none" />

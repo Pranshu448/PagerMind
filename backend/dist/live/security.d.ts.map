@@ -1,0 +1,1 @@
+{"version":3,"file":"security.d.ts","sourceRoot":"","sources":["../../src/live/security.ts"],"names":[],"mappings":"AAWA,wBAAgB,MAAM,CAAC,KAAK,EAAE,MAAM,GAAG,MAAM,CAI5C;AAED,wBAAgB,aAAa,CAAC,KAAK,EAAE,MAAM,GAAG,MAAM,CAAuR;AAC3U,wBAAgB,aAAa,CAAC,CAAC,EAAE,KAAK,EAAE,MAAM,GAAG,CAAC,CAAiS;AACnV,wBAAgB,aAAa,IAAI,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAA0F"}

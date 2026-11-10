@@ -16,3 +16,62 @@ model Incident {
   recovery       String?
   createdAt      DateTime @default(now())
 }
+
+model LiveService {
+  id               String   @id @default(uuid())
+  name             String
+  provider         String
+  configJson       String
+  encryptedSecrets String
+  monitorState     String   @default("HEALTHY")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  runs             LiveRun[]
+}
+
+model LiveRun {
+  id           String         @id @default(uuid())
+  serviceId    String
+  service      LiveService    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  status       String
+  trigger      String
+  startedAt    DateTime       @default(now())
+  completedAt  DateTime?
+  timingsJson  String         @default("{}")
+  tokenUsage   Int            @default(0)
+  model        String?
+  evidence     LiveEvidence[]
+  report       LiveReport?
+  events       LiveRunEvent[]
+}
+
+model LiveEvidence {
+  id        String   @id @default(uuid())
+  runId     String
+  run       LiveRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  evidenceId String
+  source    String
+  observedAt DateTime
+  content   String
+  truncated Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@unique([runId, evidenceId])
+}
+
+model LiveReport {
+  id        String   @id @default(uuid())
+  runId     String   @unique
+  run       LiveRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  reportJson String
+  createdAt DateTime @default(now())
+}
+
+model LiveRunEvent {
+  id        String   @id @default(uuid())
+  runId     String
+  run       LiveRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  type      String
+  content   String
+  createdAt DateTime @default(now())
+  @@index([runId, createdAt])
+}

@@ -1,3 +1,6 @@
 node_modules/
 .env
 sandbox/
+backend/*.db
+backend/*.db-*
+backend/prisma/*.db

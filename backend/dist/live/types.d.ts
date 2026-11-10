@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 export declare const liveProviderSchema: z.ZodEnum<{
     render: "render";
     vercel: "vercel";
@@ -67,7 +67,7 @@ export type ProbeResult = {
     ok: boolean;
     status?: number;
     latencyMs: number;
-    errorClass?: 'timeout' | 'dns' | 'tls' | 'refused' | 'http';
+    errorClass?: "timeout" | "dns" | "tls" | "refused" | "http";
     redirectCount: number;
     observedAt: string;
 };

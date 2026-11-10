@@ -1,5 +1,5 @@
-import type { PrismaClient } from '@prisma/client';
-export type RunStarter = (serviceId: string, trigger: 'monitor' | 'manual') => Promise<void>;
+import type { PrismaClient } from "@prisma/client";
+export type RunStarter = (serviceId: string, trigger: "monitor" | "manual") => Promise<void>;
 export declare class LiveScheduler {
     private readonly prisma;
     private readonly startRun;

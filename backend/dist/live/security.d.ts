@@ -1,4 +1,5 @@
 export declare function redact(input: string): string;
+export declare function validateLiveSecretKey(): void;
 export declare function encryptSecret(value: object): string;
 export declare function decryptSecret<T>(value: string): T;
 export declare function maskedSecrets(): Record<string, string>;

@@ -1,4 +1,4 @@
-import type { EvidenceGap, EvidenceItem, Hypothesis } from './types.js';
+import type { EvidenceGap, EvidenceItem, Hypothesis } from "./types.js";
 export declare const WEIGHTS: {
     readonly independentSources: 15;
     readonly temporalAlignment: 20;

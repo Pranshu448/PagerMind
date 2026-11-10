@@ -1,4 +1,4 @@
-import { type ServiceConfig } from './types.js';
+import { type ServiceConfig } from "./types.js";
 export declare function analyze(config: ServiceConfig, geminiKey: string | undefined, evidenceText: string): Promise<unknown>;
 export declare function validateLlmOutput(value: unknown): {
     hypotheses: {

@@ -1,4 +1,52 @@
-import { redact } from './security.js';
-import type { EvidenceItem } from './types.js';
-export function normalizeEvidence(items: EvidenceItem[], budget: number): EvidenceItem[] { const seen = new Set<string>(); const safe = items.map(item => ({ ...item, content: redact(item.content) })).filter(item => { const key = `${item.source}:${item.content}`; if (seen.has(key)) return false; seen.add(key); return true; }).sort((a, b) => Number(/error|exception|fail|timeout/i.test(b.content)) - Number(/error|exception|fail|timeout/i.test(a.content))); let used = 0; return safe.map((item, index) => { const remaining = Math.max(0, budget - used); const content = item.content.slice(0, remaining); used += content.length; return { ...item, evidenceId: `E${index + 1}`, content, truncated: item.truncated || content.length < item.content.length }; }).filter(i => i.content.length > 0); }
-export function verifyCitations(hypotheses: any[], evidence: EvidenceItem[]) { const byId = new Map(evidence.map(e => [e.evidenceId, e])); return hypotheses.map(h => ({ ...h, supportingEvidence: h.supportingEvidence.filter((id: string) => byId.has(id)), contradictingEvidence: h.contradictingEvidence.filter((id: string) => byId.has(id)), quotedSnippets: h.quotedSnippets.filter((q: any) => byId.get(q.evidenceId)?.content.includes(q.snippet)) })).filter(h => h.supportingEvidence.length > 0); }
+import { redact } from "./security.js";
+import type { EvidenceItem } from "./types.js";
+export function normalizeEvidence(
+  items: EvidenceItem[],
+  budget: number,
+): EvidenceItem[] {
+  const seen = new Set<string>();
+  const safe = items
+    .map((item) => ({ ...item, content: redact(item.content) }))
+    .filter((item) => {
+      const key = `${item.source}:${item.content}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        Number(/error|exception|fail|timeout/i.test(b.content)) -
+        Number(/error|exception|fail|timeout/i.test(a.content)),
+    );
+  let used = 0;
+  return safe
+    .map((item, index) => {
+      const remaining = Math.max(0, budget - used);
+      const content = item.content.slice(0, remaining);
+      used += content.length;
+      return {
+        ...item,
+        evidenceId: `E${index + 1}`,
+        content,
+        truncated: item.truncated || content.length < item.content.length,
+      };
+    })
+    .filter((i) => i.content.length > 0);
+}
+export function verifyCitations(hypotheses: any[], evidence: EvidenceItem[]) {
+  const byId = new Map(evidence.map((e) => [e.evidenceId, e]));
+  return hypotheses
+    .map((h) => ({
+      ...h,
+      supportingEvidence: h.supportingEvidence.filter((id: string) =>
+        byId.has(id),
+      ),
+      contradictingEvidence: h.contradictingEvidence.filter((id: string) =>
+        byId.has(id),
+      ),
+      quotedSnippets: h.quotedSnippets.filter((q: any) =>
+        byId.get(q.evidenceId)?.content.includes(q.snippet),
+      ),
+    }))
+    .filter((h) => h.supportingEvidence.length > 0);
+}
